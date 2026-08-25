@@ -1,0 +1,276 @@
+.logo-3d-link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  user-select: none;
+}
+
+.logo-3d-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  perspective: 800px;
+  cursor: pointer;
+}
+
+/* Sizing presets */
+.logo-size-sm .logo-3d-box {
+  width: 32px;
+  height: 32px;
+}
+.logo-size-sm .brand-name {
+  font-size: 1rem;
+}
+.logo-size-sm .brand-badge-ai {
+  font-size: 0.65rem;
+  padding: 1px 5px;
+}
+
+.logo-size-md .logo-3d-box {
+  width: 42px;
+  height: 42px;
+}
+.logo-size-md .brand-name {
+  font-size: 1.25rem;
+}
+.logo-size-md .brand-badge-ai {
+  font-size: 0.75rem;
+  padding: 2px 7px;
+}
+
+@media (max-width: 480px) {
+  .logo-size-md .logo-3d-box {
+    width: 34px;
+    height: 34px;
+  }
+  .logo-size-md .brand-name {
+    font-size: 1.05rem;
+  }
+  .logo-size-md .brand-badge-ai {
+    font-size: 0.65rem;
+    padding: 1px 5px;
+  }
+}
+
+.logo-size-lg .logo-3d-box {
+  width: 58px;
+  height: 58px;
+}
+.logo-size-lg .brand-name {
+  font-size: 1.6rem;
+}
+.logo-size-lg .brand-badge-ai {
+  font-size: 0.85rem;
+  padding: 3px 9px;
+}
+
+.logo-size-xl .logo-3d-box {
+  width: 80px;
+  height: 80px;
+}
+.logo-size-xl .brand-name {
+  font-size: 2.2rem;
+}
+.logo-size-xl .brand-badge-ai {
+  font-size: 1.1rem;
+  padding: 4px 12px;
+}
+
+/* 3D Box Container */
+.logo-3d-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-style: preserve-3d;
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.3s ease;
+}
+
+.logo-3d-container.hovered .logo-3d-box {
+  filter: drop-shadow(0 0 16px rgba(0, 242, 254, 0.6));
+}
+
+/* Ambient Back Glow */
+.logo-ambient-glow {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 242, 254, 0.4) 0%, rgba(127, 0, 255, 0.2) 60%, transparent 100%);
+  filter: blur(8px);
+  opacity: 0.6;
+  animation: logoPulseAura 3s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes logoPulseAura {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(1.15);
+    opacity: 0.8;
+  }
+}
+
+/* Orbiting Rings */
+.logo-orbit-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  pointer-events: none;
+  transform-style: preserve-3d;
+}
+
+.logo-orbit-ring.ring-1 {
+  border: 1.5px solid transparent;
+  border-top-color: #00f2fe;
+  border-right-color: #00e676;
+  animation: logoSpinOrbit1 4s linear infinite;
+}
+
+.logo-orbit-ring.ring-2 {
+  inset: -10px;
+  border: 1.5px stroke transparent;
+  border-bottom-color: #7f00ff;
+  border-left-color: #ff007f;
+  animation: logoSpinOrbit2 6s linear infinite reverse;
+}
+
+@keyframes logoSpinOrbit1 {
+  0% {
+    transform: rotateX(65deg) rotateY(20deg) rotateZ(0deg);
+  }
+  100% {
+    transform: rotateX(65deg) rotateY(20deg) rotateZ(360deg);
+  }
+}
+
+@keyframes logoSpinOrbit2 {
+  0% {
+    transform: rotateX(35deg) rotateY(-50deg) rotateZ(0deg);
+  }
+  100% {
+    transform: rotateX(35deg) rotateY(-50deg) rotateZ(360deg);
+  }
+}
+
+/* Orbit Particle Nodes */
+.orbit-particle {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 8px #00f2fe, 0 0 12px #00e676;
+}
+
+.orbit-particle.p1 {
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.orbit-particle.p2 {
+  bottom: 0;
+  right: 20%;
+  background: #ff007f;
+  box-shadow: 0 0 8px #ff007f;
+}
+
+/* Shield 3D SVG */
+.logo-shield-3d {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  z-index: 2;
+  transform-style: preserve-3d;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5));
+}
+
+.shield-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* Light Sweep Line */
+.logo-light-sweep {
+  position: absolute;
+  inset: -20%;
+  background: linear-gradient(135deg, transparent 40%, rgba(255, 255, 255, 0.4) 50%, transparent 60%);
+  transform: translateX(-100%) rotate(25deg);
+  transition: transform 0.6s ease;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.logo-3d-container.hovered .logo-light-sweep {
+  transform: translateX(100%) rotate(25deg);
+}
+
+/* Brand Text Styling */
+.logo-brand-text {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.brand-name {
+  color: #f8fafc;
+  background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-family: inherit;
+}
+
+.brand-highlight {
+  background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* AI Badge */
+.brand-badge-ai {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: linear-gradient(135deg, rgba(0, 242, 254, 0.15), rgba(0, 230, 118, 0.15));
+  border: 1px solid rgba(0, 242, 254, 0.4);
+  border-radius: 20px;
+  color: #00f2fe;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  box-shadow: 0 0 10px rgba(0, 242, 254, 0.2);
+  transition: all 0.3s ease;
+}
+
+.logo-3d-container.hovered .brand-badge-ai {
+  background: linear-gradient(135deg, #00f2fe, #00e676);
+  color: #060c19;
+  box-shadow: 0 0 16px rgba(0, 242, 254, 0.6);
+  transform: translateY(-1px);
+}
+
+.ai-pulse-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #00e676;
+  box-shadow: 0 0 6px #00e676;
+  animation: aiDotBlink 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes aiDotBlink {
+  0% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+}
