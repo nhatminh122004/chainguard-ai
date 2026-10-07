@@ -8,7 +8,7 @@ import Logo3D from '@/components/Logo3D/Logo3D';
 import './login.css';
 
 export default function LoginPage() {
-  const { signInWithGoogle, signInWithEmail, signUpWithEmail, error, clearError } = useAuth();
+  const { signInWithGoogle, signInWithEmail, signUpWithEmail, signInDemo, error, clearError } = useAuth();
   const router = useRouter();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -24,6 +24,20 @@ export default function LoginPage() {
     window.addEventListener('mousemove', handleMouse, { passive: true });
     return () => window.removeEventListener('mousemove', handleMouse);
   }, []);
+
+  const handleDemoSignIn = async () => {
+    try {
+      setIsSubmitting(true);
+      const success = await signInDemo();
+      if (success) {
+        router.push('/dashboard');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleGoogleSignIn = async () => {
     try {
@@ -135,6 +149,31 @@ export default function LoginPage() {
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
               </svg>
               <span>Đăng nhập với Google</span>
+            </button>
+
+            {/* Quick Demo Access for Judges & Reviewers */}
+            <button
+              type="button"
+              className="btn btn-secondary w-full"
+              style={{
+                marginTop: 'var(--space-sm)',
+                background: 'linear-gradient(135deg, rgba(108, 99, 255, 0.18), rgba(0, 210, 255, 0.18))',
+                borderColor: 'rgba(108, 99, 255, 0.4)',
+                padding: '12px 18px',
+                borderRadius: 'var(--radius-md)',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                color: 'var(--text-primary)',
+                boxShadow: '0 4px 15px rgba(108, 99, 255, 0.2)',
+              }}
+              onClick={handleDemoSignIn}
+              disabled={isSubmitting}
+            >
+              <span style={{ fontSize: '1.2rem' }}>🚀</span>
+              <span>Truy cập nhanh Demo (Dành cho Giám khảo & Khách)</span>
             </button>
 
             <div className="form-divider-3d">

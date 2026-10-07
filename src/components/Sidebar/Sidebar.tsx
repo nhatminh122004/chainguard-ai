@@ -24,6 +24,7 @@ const navItems: NavItem[] = [
   { id: 'credit', label: 'Credit Score', href: '/credit', icon: '📈' },
   { id: 'report', label: 'AI Report', href: '/report', icon: '📄', badge: 'Gemini' },
   { id: 'fraud', label: 'Fraud Shield', href: '/fraud', icon: '🛡️' },
+  { id: 'fake-bill', label: 'Fake Bill & QR', href: '/fake-bill', icon: '🔍', badge: 'Hot' },
 ];
 
 const bottomItems: NavItem[] = [

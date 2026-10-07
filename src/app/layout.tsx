@@ -34,6 +34,25 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icon.svg" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* Sanitize extension injected attributes (e.g. Bitdefender bis_skin_checked) before React hydration */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                if (typeof window !== 'undefined' && window.MutationObserver) {
+                  var obs = new MutationObserver(function(mutations) {
+                    for (var i = 0; i < mutations.length; i++) {
+                      if (mutations[i].attributeName === 'bis_skin_checked') {
+                        mutations[i].target.removeAttribute('bis_skin_checked');
+                      }
+                    }
+                  });
+                  obs.observe(document.documentElement, { attributes: true, subtree: true, attributeFilter: ['bis_skin_checked'] });
+                }
+              })();
+            `,
+          }}
+        />
       </head>
       <body suppressHydrationWarning>
         <CustomCursor />

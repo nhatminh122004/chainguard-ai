@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/Toast/Toast';
 import {
@@ -341,6 +342,24 @@ export default function FraudPage() {
               <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 'var(--space-sm)' }}>
                 Phân tích: {transactions.length} giao dịch
               </p>
+            </div>
+          </div>
+
+          <div className="glass-card animate-fade-in-up delay-350" style={{
+            background: 'linear-gradient(135deg, rgba(108, 99, 255, 0.1), rgba(0, 210, 255, 0.05))',
+            borderColor: 'rgba(108, 99, 255, 0.3)',
+          }}>
+            <div className="card-header">
+              <h3 className="card-title">🔍 Fake Bill & QR Scanner</h3>
+              <span className="badge badge-primary">Mới / AI</span>
+            </div>
+            <div className="card-body">
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-md)', lineHeight: 1.5 }}>
+                Bảo vệ quầy thu ngân & tiểu thương khỏi biên lai chuyển khoản giả mạo (fake bill ngân hàng) hoặc mã QR độc hại.
+              </p>
+              <Link href="/fake-bill" className="btn btn-primary btn-sm" style={{ width: '100%', justifyContent: 'center' }}>
+                🚀 Mở Fake Bill Detector
+              </Link>
             </div>
           </div>
 

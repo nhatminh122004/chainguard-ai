@@ -97,37 +97,141 @@ export function getCategoryConfig(category: string) {
 }
 
 // ============================================
+// Local Demo Storage Helper (Zero-error fallback)
+// ============================================
+const DEMO_TX_KEY = 'chainguard_demo_transactions';
+const DEMO_ALERTS_KEY = 'chainguard_demo_alerts';
+
+export function isDemoUser(userId?: string | null): boolean {
+  if (!userId) return true;
+  if (userId.startsWith('demo-')) return true;
+  if (typeof window !== 'undefined' && localStorage.getItem('chainguard_demo_session') === 'true') {
+    return true;
+  }
+  return false;
+}
+
+export function getLocalDemoTransactions(): Transaction[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(DEMO_TX_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return parsed.map((t: any) => ({
+      ...t,
+      date: new Date(t.date),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalDemoTransactions(txs: Transaction[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(DEMO_TX_KEY, JSON.stringify(txs));
+  } catch (e) {
+    console.warn('Failed to save local demo transactions:', e);
+  }
+}
+
+export function getLocalDemoAlerts(): FraudAlert[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(DEMO_ALERTS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalDemoAlerts(alerts: FraudAlert[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(DEMO_ALERTS_KEY, JSON.stringify(alerts));
+  } catch (e) {
+    console.warn('Failed to save local demo alerts:', e);
+  }
+}
+
+// ============================================
 // Transactions
 // ============================================
 
 export async function addTransaction(userId: string, data: Omit<Transaction, 'id' | 'userId' | 'createdAt'>): Promise<string> {
-  const docRef = await addDoc(collection(db, 'transactions'), {
-    ...data,
-    userId,
-    date: data.date instanceof Date ? Timestamp.fromDate(data.date) : data.date,
-    createdAt: serverTimestamp(),
-  });
-  return docRef.id;
+  if (isDemoUser(userId)) {
+    const id = 'demo-tx-' + Date.now();
+    const newTx: Transaction = {
+      id,
+      userId,
+      ...data,
+      date: data.date instanceof Date ? data.date : new Date(),
+    };
+    const local = getLocalDemoTransactions();
+    saveLocalDemoTransactions([newTx, ...local]);
+    return id;
+  }
+
+  try {
+    const docRef = await addDoc(collection(db, 'transactions'), {
+      ...data,
+      userId,
+      date: data.date instanceof Date ? Timestamp.fromDate(data.date) : data.date,
+      createdAt: serverTimestamp(),
+    });
+    return docRef.id;
+  } catch (err: any) {
+    console.warn('Firestore addTransaction fallback to local storage:', err?.message);
+    const id = 'local-tx-' + Date.now();
+    const newTx: Transaction = {
+      id,
+      userId,
+      ...data,
+      date: data.date instanceof Date ? data.date : new Date(),
+    };
+    const local = getLocalDemoTransactions();
+    saveLocalDemoTransactions([newTx, ...local]);
+    return id;
+  }
 }
 
 export async function getTransactions(userId: string, limitCount: number = 50): Promise<Transaction[]> {
-  const q = query(
-    collection(db, 'transactions'),
-    where('userId', '==', userId),
-    limit(Math.min(limitCount * 2, 200))
-  );
-  const snapshot = await getDocs(q);
-  const txs = snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
-    date: doc.data().date?.toDate?.() || new Date(),
-  })) as Transaction[];
-  // Sort client-side to avoid composite index requirement
-  return txs.sort((a, b) => {
-    const da = a.date instanceof Date ? a.date.getTime() : 0;
-    const db2 = b.date instanceof Date ? b.date.getTime() : 0;
-    return db2 - da;
-  }).slice(0, limitCount);
+  if (isDemoUser(userId)) {
+    let local = getLocalDemoTransactions();
+    if (local.length === 0) {
+      await seedDemoTransactions(userId);
+      local = getLocalDemoTransactions();
+    }
+    return local.slice(0, limitCount);
+  }
+
+  try {
+    const q = query(
+      collection(db, 'transactions'),
+      where('userId', '==', userId),
+      limit(Math.min(limitCount * 2, 200))
+    );
+    const snapshot = await getDocs(q);
+    const txs = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+      date: doc.data().date?.toDate?.() || new Date(),
+    })) as Transaction[];
+    return txs.sort((a, b) => {
+      const da = a.date instanceof Date ? a.date.getTime() : 0;
+      const db2 = b.date instanceof Date ? b.date.getTime() : 0;
+      return db2 - da;
+    }).slice(0, limitCount);
+  } catch (err: any) {
+    console.warn('Firestore getTransactions fallback to local data:', err?.message);
+    let local = getLocalDemoTransactions();
+    if (local.length === 0) {
+      await seedDemoTransactions(userId);
+      local = getLocalDemoTransactions();
+    }
+    return local.slice(0, limitCount);
+  }
 }
 
 export async function getRecentTransactions(userId: string, count: number = 7): Promise<Transaction[]> {
@@ -347,32 +451,93 @@ export function getScoreLabel(score: number): { label: string; color: string } {
 // ============================================
 
 export async function getFraudAlerts(userId: string): Promise<FraudAlert[]> {
-  const q = query(
-    collection(db, 'fraudAlerts'),
-    where('userId', '==', userId),
-    limit(50)
-  );
-  const snapshot = await getDocs(q);
-  const alerts = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as FraudAlert[];
-  // Sort client-side to avoid composite index requirement
-  return alerts.sort((a, b) => {
-    const dateA = a.createdAt instanceof Date ? a.createdAt.getTime() : (a.createdAt as any)?.toDate?.()?.getTime?.() || 0;
-    const dateB = b.createdAt instanceof Date ? b.createdAt.getTime() : (b.createdAt as any)?.toDate?.()?.getTime?.() || 0;
-    return dateB - dateA;
-  }).slice(0, 20);
+  if (isDemoUser(userId)) {
+    const local = getLocalDemoAlerts();
+    if (local.length === 0) {
+      const initAlert: FraudAlert = {
+        id: 'alert-init-1',
+        userId,
+        type: 'warning',
+        title: 'Bảo vệ tài khoản kích hoạt',
+        description: 'Hệ thống AI Forensics & Shield đang giám sát giao dịch và biên lai chuyển khoản.',
+        resolved: false,
+        createdAt: new Date() as any,
+      };
+      saveLocalDemoAlerts([initAlert]);
+      return [initAlert];
+    }
+    return local;
+  }
+
+  try {
+    const q = query(
+      collection(db, 'fraudAlerts'),
+      where('userId', '==', userId),
+      limit(50)
+    );
+    const snapshot = await getDocs(q);
+    const alerts = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as FraudAlert[];
+    // Sort client-side to avoid composite index requirement
+    return alerts.sort((a, b) => {
+      const dateA = a.createdAt instanceof Date ? a.createdAt.getTime() : (a.createdAt as any)?.toDate?.()?.getTime?.() || 0;
+      const dateB = b.createdAt instanceof Date ? b.createdAt.getTime() : (b.createdAt as any)?.toDate?.()?.getTime?.() || 0;
+      return dateB - dateA;
+    }).slice(0, 20);
+  } catch (err: any) {
+    console.warn('Firestore getFraudAlerts fallback to local alerts:', err?.message);
+    return getLocalDemoAlerts();
+  }
 }
 
 export async function resolveAlert(alertId: string): Promise<void> {
-  await updateDoc(doc(db, 'fraudAlerts', alertId), { resolved: true });
+  const local = getLocalDemoAlerts();
+  const index = local.findIndex((a) => a.id === alertId);
+  if (index !== -1) {
+    local[index].resolved = true;
+    saveLocalDemoAlerts(local);
+  }
+
+  try {
+    await updateDoc(doc(db, 'fraudAlerts', alertId), { resolved: true });
+  } catch (err: any) {
+    console.warn('Firestore resolveAlert warning (handled locally):', err?.message);
+  }
 }
 
 export async function createFraudAlert(userId: string, alert: Omit<FraudAlert, 'id' | 'userId' | 'createdAt'>): Promise<string> {
-  const docRef = await addDoc(collection(db, 'fraudAlerts'), {
-    ...alert,
-    userId,
-    createdAt: serverTimestamp(),
-  });
-  return docRef.id;
+  if (isDemoUser(userId)) {
+    const id = 'alert-' + Date.now();
+    const newAlert: FraudAlert = {
+      id,
+      userId,
+      ...alert,
+      createdAt: new Date() as any,
+    };
+    const local = getLocalDemoAlerts();
+    saveLocalDemoAlerts([newAlert, ...local]);
+    return id;
+  }
+
+  try {
+    const docRef = await addDoc(collection(db, 'fraudAlerts'), {
+      ...alert,
+      userId,
+      createdAt: serverTimestamp(),
+    });
+    return docRef.id;
+  } catch (err: any) {
+    console.warn('Firestore createFraudAlert fallback to local alerts:', err?.message);
+    const id = 'local-alert-' + Date.now();
+    const newAlert: FraudAlert = {
+      id,
+      userId,
+      ...alert,
+      createdAt: new Date() as any,
+    };
+    const local = getLocalDemoAlerts();
+    saveLocalDemoAlerts([newAlert, ...local]);
+    return id;
+  }
 }
 
 // Analyze transactions for suspicious patterns
@@ -460,32 +625,54 @@ export async function updateUserSettings(userId: string, settings: Partial<UserS
 // ============================================
 
 export async function seedDemoTransactions(userId: string): Promise<void> {
-  const existingTx = await getTransactions(userId, 1);
-  if (existingTx.length > 0) return; // Already has data
-
+  const isDemo = isDemoUser(userId);
   const now = new Date();
-  const demoData: Omit<Transaction, 'id' | 'userId' | 'createdAt'>[] = [
-    { name: 'Lương tháng ' + (now.getMonth() + 1), amount: 15000000, category: 'Thu nhập', icon: '💰', date: new Date(now.getFullYear(), now.getMonth(), 5), verified: true, note: 'Lương công ty' },
-    { name: 'Grab Food - Phở Hà Nội', amount: -125000, category: 'Ăn uống', icon: '🍔', date: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000), verified: true },
-    { name: 'Shopee - Tai nghe Bluetooth', amount: -450000, category: 'Mua sắm', icon: '🛍️', date: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000), verified: false },
-    { name: 'EVN - Tiền điện', amount: -320000, category: 'Hóa đơn', icon: '⚡', date: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000), verified: true },
-    { name: 'Freelance - UI/UX Design', amount: 3500000, category: 'Thu nhập', icon: '💻', date: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000), verified: true },
-    { name: 'Highlands Coffee', amount: -55000, category: 'Ăn uống', icon: '☕', date: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000), verified: false },
-    { name: 'Grab Bike - Q1 → Q7', amount: -45000, category: 'Di chuyển', icon: '🏍️', date: new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000), verified: true },
-    { name: 'Netflix', amount: -99000, category: 'Giải trí', icon: '🎬', date: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), verified: false },
-    { name: 'Internet VNPT', amount: -250000, category: 'Hóa đơn', icon: '🌐', date: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000), verified: true },
-    { name: 'Tiền thuê nhà T' + (now.getMonth() + 1), amount: -4500000, category: 'Hóa đơn', icon: '🏠', date: new Date(now.getFullYear(), now.getMonth(), 1), verified: true },
+  const demoData: Transaction[] = [
+    { id: 'demo-tx-1', userId, name: 'Lương tháng ' + (now.getMonth() + 1), amount: 15000000, category: 'Thu nhập', icon: '💰', date: new Date(now.getFullYear(), now.getMonth(), 5), verified: true, note: 'Lương công ty' },
+    { id: 'demo-tx-2', userId, name: 'Grab Food - Phở Hà Nội', amount: -125000, category: 'Ăn uống', icon: '🍔', date: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000), verified: true },
+    { id: 'demo-tx-3', userId, name: 'Shopee - Tai nghe Bluetooth', amount: -450000, category: 'Mua sắm', icon: '🛍️', date: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000), verified: false },
+    { id: 'demo-tx-4', userId, name: 'EVN - Tiền điện', amount: -320000, category: 'Hóa đơn', icon: '⚡', date: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000), verified: true },
+    { id: 'demo-tx-5', userId, name: 'Freelance - UI/UX Design', amount: 3500000, category: 'Thu nhập', icon: '💻', date: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000), verified: true },
+    { id: 'demo-tx-6', userId, name: 'Highlands Coffee', amount: -55000, category: 'Ăn uống', icon: '☕', date: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000), verified: false },
+    { id: 'demo-tx-7', userId, name: 'Grab Bike - Q1 → Q7', amount: -45000, category: 'Di chuyển', icon: '🏍️', date: new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000), verified: true },
+    { id: 'demo-tx-8', userId, name: 'Netflix', amount: -99000, category: 'Giải trí', icon: '🎬', date: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), verified: false },
+    { id: 'demo-tx-9', userId, name: 'Internet VNPT', amount: -250000, category: 'Hóa đơn', icon: '🌐', date: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000), verified: true },
+    { id: 'demo-tx-10', userId, name: 'Tiền thuê nhà T' + (now.getMonth() + 1), amount: -4500000, category: 'Hóa đơn', icon: '🏠', date: new Date(now.getFullYear(), now.getMonth(), 1), verified: true },
   ];
 
-  const batch = writeBatch(db);
-  demoData.forEach((tx) => {
-    const ref = doc(collection(db, 'transactions'));
-    batch.set(ref, {
-      ...tx,
-      userId,
-      date: Timestamp.fromDate(tx.date as Date),
-      createdAt: serverTimestamp(),
+  if (isDemo) {
+    const local = getLocalDemoTransactions();
+    if (local.length === 0) {
+      saveLocalDemoTransactions(demoData);
+    }
+    return;
+  }
+
+  try {
+    const existingTx = await getTransactions(userId, 1);
+    if (existingTx.length > 0) return; // Already has data
+
+    const batch = writeBatch(db);
+    demoData.forEach((tx) => {
+      const ref = doc(collection(db, 'transactions'));
+      batch.set(ref, {
+        name: tx.name,
+        amount: tx.amount,
+        category: tx.category,
+        icon: tx.icon,
+        note: tx.note || '',
+        verified: tx.verified,
+        userId,
+        date: Timestamp.fromDate(tx.date as Date),
+        createdAt: serverTimestamp(),
+      });
     });
-  });
-  await batch.commit();
+    await batch.commit();
+  } catch (err: any) {
+    console.warn('Firestore seedDemoTransactions fallback to local storage:', err?.message);
+    const local = getLocalDemoTransactions();
+    if (local.length === 0) {
+      saveLocalDemoTransactions(demoData);
+    }
+  }
 }

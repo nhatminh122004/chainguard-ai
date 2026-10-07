@@ -32,10 +32,10 @@ export default function DashboardLayout({
   if (!user) return null;
 
   return (
-    <div className="dashboard-layout">
+    <div className="dashboard-layout" suppressHydrationWarning>
       <Sidebar />
-      <main className="dashboard-main">
-        <div className="dashboard-content">
+      <main className="dashboard-main" suppressHydrationWarning>
+        <div className="dashboard-content" suppressHydrationWarning>
           {children}
         </div>
       </main>

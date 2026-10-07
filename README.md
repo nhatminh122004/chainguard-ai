@@ -41,10 +41,11 @@
 | **📝 AI Report** | Tạo báo cáo phân tích tài chính chi tiết + kế hoạch tháng tới |
 | **🏆 Credit Score** | Tính điểm tín dụng (300-850) dựa trên 5 yếu tố hành vi chi tiêu |
 
-### 🛡️ Fraud Detection
+### 🛡️ Fraud Detection & Forensic Shield
 | Tính năng | Mô tả |
 |-----------|--------|
-| **🔍 Server-side Scan** | 5 quy tắc phát hiện gian lận chạy server-side |
+| **🔍 Fake Bill & Scam QR** | **[MỚI]** Giám định biên lai chuyển khoản giả mạo & mã QR lừa đảo bằng Gemini Vision AI — soi font số tiền, căn lề, vệt Photoshop, trạng thái hẹn giờ và phishing URL |
+| **🛡️ Server-side Scan** | 5 quy tắc phát hiện gian lận chạy server-side |
 | **⚠️ Real-time Alerts** | Cảnh báo tức thì khi phát hiện giao dịch bất thường |
 | **📊 Pattern Analysis** | Phân tích pattern: giao dịch lớn, giờ khuya, lặp bất thường |
 

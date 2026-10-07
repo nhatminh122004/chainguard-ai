@@ -21,6 +21,7 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<boolean>;
   signInWithEmail: (email: string, password: string) => Promise<boolean>;
   signUpWithEmail: (email: string, password: string, displayName: string) => Promise<boolean>;
+  signInDemo: () => Promise<boolean>;
   signOut: () => Promise<void>;
   error: string | null;
   clearError: () => void;
@@ -32,6 +33,7 @@ const AuthContext = createContext<AuthContextType>({
   signInWithGoogle: async () => false,
   signInWithEmail: async () => false,
   signUpWithEmail: async () => false,
+  signInDemo: async () => false,
   signOut: async () => {},
   error: null,
   clearError: () => {},
@@ -91,6 +93,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Check if demo user session is saved
+    const isDemo = typeof window !== 'undefined' && localStorage.getItem('chainguard_demo_session') === 'true';
+    if (isDemo) {
+      setUser({
+        uid: 'demo-judge-hungyen-2026',
+        email: 'judge.demo@chainguard.ai',
+        displayName: 'Giám Khảo Khởi Nghiệp Hưng Yên',
+        photoURL: '',
+      } as unknown as User);
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
       setLoading(false);
@@ -142,9 +157,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const signInDemo = async (): Promise<boolean> => {
+    try {
+      setError(null);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('chainguard_demo_session', 'true');
+      }
+      setUser({
+        uid: 'demo-judge-hungyen-2026',
+        email: 'judge.demo@chainguard.ai',
+        displayName: 'Giám Khảo Khởi Nghiệp Hưng Yên',
+        photoURL: '',
+      } as unknown as User);
+      return true;
+    } catch (err: any) {
+      setError('Không thể khởi tạo phiên demo');
+      return false;
+    }
+  };
+
   const signOut = async () => {
     try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('chainguard_demo_session');
+      }
       await firebaseSignOut(auth);
+      setUser(null);
     } catch (err: any) {
       setError(err.message || 'Đăng xuất thất bại');
     }
@@ -160,6 +198,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signInWithGoogle,
         signInWithEmail,
         signUpWithEmail,
+        signInDemo,
         signOut,
         error,
         clearError,
