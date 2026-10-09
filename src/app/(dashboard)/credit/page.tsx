@@ -8,7 +8,6 @@ import {
   calculateCreditScore,
   getScoreFactors,
   getScoreLabel,
-  Transaction,
   seedDemoTransactions,
 } from '@/lib/firestore';
 

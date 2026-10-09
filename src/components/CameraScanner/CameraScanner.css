@@ -1,0 +1,265 @@
+/* ============================================
+   ChainGuard AI — Live Camera Scanner
+   ============================================ */
+
+.camscan-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(4, 6, 20, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-md);
+  animation: camscanFade 0.25s ease;
+}
+
+@keyframes camscanFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.camscan-panel {
+  width: min(560px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(160deg, rgba(23, 28, 66, 0.95), rgba(10, 13, 34, 0.98));
+  border: 1px solid rgba(108, 99, 255, 0.3);
+  border-radius: var(--radius-xl, 20px);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 40px rgba(108, 99, 255, 0.15);
+  overflow: hidden;
+  animation: camscanRise 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@keyframes camscanRise {
+  from { transform: translateY(24px) scale(0.97); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+.camscan-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.camscan-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-full);
+}
+
+.camscan-tab {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.camscan-tab:hover { color: var(--text-primary); }
+
+.camscan-tab.active {
+  background: linear-gradient(135deg, var(--primary), #8b5cf6);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(108, 99, 255, 0.4);
+}
+
+.camscan-icon-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--border-medium);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.camscan-icon-btn:hover { background: rgba(108, 99, 255, 0.18); border-color: var(--primary-light); }
+.camscan-icon-btn.on { background: rgba(255, 179, 71, 0.25); border-color: var(--accent-amber); }
+.camscan-icon-btn.placeholder { visibility: hidden; }
+
+/* Viewport */
+.camscan-viewport {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  max-height: 62vh;
+  background: #000;
+  overflow: hidden;
+}
+
+.camscan-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.camscan-frame {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+  border-radius: 18px;
+  transition: width 0.35s ease, height 0.35s ease;
+}
+
+.camscan-frame.qr { width: 66%; aspect-ratio: 1; }
+.camscan-frame.receipt { width: 78%; height: 82%; }
+
+.camscan-frame .corner {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border: 4px solid #00d2ff;
+  filter: drop-shadow(0 0 8px rgba(0, 210, 255, 0.8));
+}
+.camscan-frame .corner.tl { top: -2px; left: -2px; border-right: none; border-bottom: none; border-top-left-radius: 18px; }
+.camscan-frame .corner.tr { top: -2px; right: -2px; border-left: none; border-bottom: none; border-top-right-radius: 18px; }
+.camscan-frame .corner.bl { bottom: -2px; left: -2px; border-right: none; border-top: none; border-bottom-left-radius: 18px; }
+.camscan-frame .corner.br { bottom: -2px; right: -2px; border-left: none; border-top: none; border-bottom-right-radius: 18px; }
+
+.camscan-laser {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  height: 3px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, transparent, #00d2ff, #6c63ff, transparent);
+  box-shadow: 0 0 14px #00d2ff;
+  animation: camscanLaser 2.2s ease-in-out infinite alternate;
+}
+
+@keyframes camscanLaser {
+  from { top: 6%; }
+  to { top: 94%; }
+}
+
+.camscan-stability {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  min-width: 180px;
+  padding: 8px 14px;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(0, 230, 118, 0.4);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: center;
+  overflow: hidden;
+}
+
+.camscan-stability::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: calc(var(--p, 0) * 100%);
+  background: linear-gradient(90deg, rgba(0, 230, 118, 0.25), rgba(0, 230, 118, 0.55));
+  transition: width 0.2s linear;
+}
+
+.camscan-stability span { position: relative; }
+
+.camscan-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-xl);
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+}
+
+.camscan-status.error h4 { color: var(--text-primary); font-size: 1.05rem; }
+.camscan-status.error p { max-width: 340px; line-height: 1.5; }
+.camscan-error-icon { font-size: 2.6rem; }
+
+.camscan-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  animation: camscanFlash 0.35s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes camscanFlash {
+  from { opacity: 0.9; }
+  to { opacity: 0; }
+}
+
+/* Controls */
+.camscan-controls {
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.camscan-hint {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.camscan-engine {
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.camscan-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-lg);
+}
+
+.camscan-shutter {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 4px solid rgba(255, 255, 255, 0.9);
+  background: radial-gradient(circle, #fff 55%, rgba(255, 255, 255, 0.15) 57%);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.camscan-shutter:hover:not(:disabled) { transform: scale(1.06); }
+.camscan-shutter:active:not(:disabled) { transform: scale(0.94); }
+.camscan-shutter:disabled { opacity: 0.4; cursor: not-allowed; }
+.camscan-shutter.placeholder { visibility: hidden; }
+
+@media (max-width: 640px) {
+  .camscan-overlay { padding: 0; }
+  .camscan-panel { border-radius: 0; height: 100%; }
+  .camscan-viewport { flex: 1; max-height: none; aspect-ratio: auto; }
+}

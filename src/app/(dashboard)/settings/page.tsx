@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/Toast/Toast';
-import { getUserSettings, updateUserSettings, UserSettings } from '@/lib/firestore';
+import { getUserSettings, updateUserSettings } from '@/lib/firestore';
 import {
   isGoogleConnected,
   requestGoogleAccess,
@@ -16,11 +16,11 @@ import {
   sendTestNotification,
   NotificationPermission as NotifPerm,
 } from '@/lib/notifications';
+import PinnedAccountsCard from '@/components/PinnedAccountsCard/PinnedAccountsCard';
 
 export default function SettingsPage() {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const [settings, setSettings] = useState<UserSettings | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [currency, setCurrency] = useState('VND');
   const [notifications, setNotifications] = useState({
@@ -46,7 +46,6 @@ export default function SettingsPage() {
     try {
       const data = await getUserSettings(user.uid);
       if (data) {
-        setSettings(data);
         setDisplayName(data.displayName);
         setCurrency(data.currency);
         setNotifications(data.notifications);
@@ -409,6 +408,11 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* QR Pinning — merchant's own receiving accounts */}
+      <div className="animate-fade-in-up delay-400" style={{ marginTop: 'var(--space-xl)' }}>
+        <PinnedAccountsCard />
       </div>
     </div>
   );

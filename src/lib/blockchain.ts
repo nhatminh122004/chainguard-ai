@@ -148,12 +148,22 @@ export async function getWalletBalance(address: string): Promise<string> {
  * Generate a deterministic hash from transaction data
  */
 export function generateTransactionHash(
+  transactionId: string,
   name: string,
   amount: number,
+  category: string,
   date: string,
   userId: string
 ): string {
-  const data = `${name}|${amount}|${date}|${userId}|${Date.now()}`;
+  const data = JSON.stringify({
+    version: 1,
+    transactionId,
+    userId,
+    name: name.normalize('NFC').trim(),
+    amount: Math.round(amount),
+    category: category.normalize('NFC').trim(),
+    date: new Date(date).toISOString(),
+  });
   return ethers.keccak256(ethers.toUtf8Bytes(data));
 }
 
@@ -162,16 +172,17 @@ export function generateTransactionHash(
  * Returns the transaction hash from the blockchain
  */
 export async function recordTransactionOnChain(
+  transactionId: string,
   name: string,
   amount: number,
   category: string,
   date: string,
   userId: string
-): Promise<{ txHash: string; dataHash: string; explorerUrl: string }> {
+): Promise<{ txHash: string; dataHash: string; explorerUrl: string; blockNumber: number; walletAddress: string; contractAddress: string }> {
   const contract = await getWriteContract();
   if (!contract) throw new Error('Smart contract chưa được cấu hình. Vui lòng kiểm tra .env.local');
 
-  const dataHash = generateTransactionHash(name, amount, date, userId);
+  const dataHash = generateTransactionHash(transactionId, name, amount, category, date, userId);
   // amount in VND (store as int256)
   const amountWei = BigInt(Math.round(amount));
 
@@ -181,6 +192,9 @@ export async function recordTransactionOnChain(
   return {
     txHash: receipt.hash,
     dataHash,
+    blockNumber: receipt.blockNumber,
+    walletAddress: await (contract.runner as ethers.Signer).getAddress(),
+    contractAddress: CONTRACT_ADDRESS,
     explorerUrl: `https://sepolia.etherscan.io/tx/${receipt.hash}`,
   };
 }
@@ -189,12 +203,12 @@ export async function recordTransactionOnChain(
  * Batch record multiple transactions on-chain (saves gas)
  */
 export async function batchRecordOnChain(
-  transactions: { name: string; amount: number; category: string; date: string; userId: string }[]
-): Promise<{ txHash: string; count: number; explorerUrl: string }> {
+  transactions: { id: string; name: string; amount: number; category: string; date: string; userId: string }[]
+): Promise<{ txHash: string; count: number; explorerUrl: string; blockNumber: number; walletAddress: string; contractAddress: string; records: { transactionId: string; dataHash: string }[] }> {
   const contract = await getWriteContract();
   if (!contract) throw new Error('Smart contract chưa được cấu hình');
 
-  const hashes = transactions.map(t => generateTransactionHash(t.name, t.amount, t.date, t.userId));
+  const hashes = transactions.map(t => generateTransactionHash(t.id, t.name, t.amount, t.category, t.date, t.userId));
   const amounts = transactions.map(t => BigInt(Math.round(t.amount)));
   const categories = transactions.map(t => t.category);
 
@@ -204,6 +218,10 @@ export async function batchRecordOnChain(
   return {
     txHash: receipt.hash,
     count: transactions.length,
+    blockNumber: receipt.blockNumber,
+    walletAddress: await (contract.runner as ethers.Signer).getAddress(),
+    contractAddress: CONTRACT_ADDRESS,
+    records: transactions.map((item, index) => ({ transactionId: item.id, dataHash: hashes[index] })),
     explorerUrl: `https://sepolia.etherscan.io/tx/${receipt.hash}`,
   };
 }

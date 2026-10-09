@@ -3,16 +3,103 @@
  * Allows instant live testing of Gemini AI Forensics without needing real bank leaks.
  */
 
+import QRCode from 'qrcode';
+import { buildVietQr } from '@/lib/vietqr';
+
 export interface PresetItem {
   id: string;
   name: string;
   bank: string;
-  type: 'legit' | 'fake_font' | 'pending_schedule' | 'phishing_qr';
+  type: 'legit' | 'fake_font' | 'pending_schedule' | 'phishing_qr' | 'qr_legit' | 'qr_swapped' | 'qr_tampered';
   badge: string;
   badgeClass: string;
   description: string;
   generateImage: () => string; // Returns data:image/png;base64,...
 }
+
+/** Draws a REAL, decodable QR code (black on white, with quiet zone). */
+function drawQrCode(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number) {
+  const qr = QRCode.create(text, { errorCorrectionLevel: 'M' });
+  const n = qr.modules.size;
+  const quiet = 4;
+  const cell = size / (n + quiet * 2);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(x, y, size, size);
+  ctx.fillStyle = '#000000';
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (qr.modules.data[r * n + c]) {
+        ctx.fillRect(x + (c + quiet) * cell, y + (r + quiet) * cell, Math.ceil(cell), Math.ceil(cell));
+      }
+    }
+  }
+}
+
+interface StandeeOptions {
+  accent: string;
+  printedName: string;
+  printedBank: string;
+  printedAccount: string;
+  qrText: string;
+  sticker?: boolean; // simulate a QR sticker pasted over the original
+  footnote: string;
+}
+
+/** Draws a shop-counter VietQR standee. */
+function drawStandee(canvas: HTMLCanvasElement, o: StandeeOptions) {
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#F4F6FB';
+  ctx.fillRect(0, 0, 600, 900);
+
+  ctx.fillStyle = o.accent;
+  ctx.fillRect(0, 0, 600, 130);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 30px sans-serif';
+  ctx.fillText('QUÉT MÃ ĐỂ THANH TOÁN', 300, 62);
+  ctx.font = '15px sans-serif';
+  ctx.fillText('VietQR • Napas 247 • Chấp nhận mọi ngân hàng', 300, 95);
+
+  // Original QR frame
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(110, 170, 380, 380);
+  ctx.strokeStyle = o.accent;
+  ctx.lineWidth = 4;
+  ctx.strokeRect(110, 170, 380, 380);
+
+  if (o.sticker) {
+    // Sticker pasted slightly off-center with a drop shadow
+    ctx.save();
+    ctx.translate(300, 360);
+    ctx.rotate(-0.035);
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetX = 4;
+    ctx.shadowOffsetY = 6;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(-172, -172, 344, 344);
+    ctx.shadowColor = 'transparent';
+    drawQrCode(ctx, o.qrText, -165, -165, 330);
+    ctx.restore();
+  } else {
+    drawQrCode(ctx, o.qrText, 125, 185, 350);
+  }
+
+  ctx.fillStyle = '#1F2937';
+  ctx.font = 'bold 26px sans-serif';
+  ctx.fillText(o.printedName, 300, 610);
+  ctx.fillStyle = '#4B5563';
+  ctx.font = '18px sans-serif';
+  ctx.fillText(`${o.printedBank} • STK ${o.printedAccount}`, 300, 645);
+
+  ctx.fillStyle = '#E5E7EB';
+  ctx.fillRect(60, 700, 480, 120);
+  ctx.fillStyle = '#374151';
+  ctx.font = '14px sans-serif';
+  ctx.fillText('Vui lòng kiểm tra TÊN NGƯỜI NHẬN trên app trước khi chuyển', 300, 745);
+  ctx.fillText(o.footnote, 300, 775);
+}
+
 
 export function createPresets(): PresetItem[] {
   // Helper to create a canvas in browser
@@ -306,39 +393,8 @@ export function createPresets(): PresetItem[] {
         ctx.font = '14px sans-serif';
         ctx.fillText('Chương trình tri ân khách hàng Hưng Yên 2026', 40, 90);
 
-        // Big fake QR representation
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(150, 180, 300, 300);
-
-        // QR finder patterns (corners)
-        ctx.fillStyle = '#000000';
-        // Top-left
-        ctx.fillRect(180, 210, 70, 70);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(195, 225, 40, 40);
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(205, 235, 20, 20);
-
-        // Top-right
-        ctx.fillRect(350, 210, 70, 70);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(365, 225, 40, 40);
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(375, 235, 20, 20);
-
-        // Bottom-left
-        ctx.fillRect(180, 380, 70, 70);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(195, 395, 40, 40);
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(205, 405, 20, 20);
-
-        // Random matrix blocks simulating phishing QR
-        for (let i = 0; i < 40; i++) {
-          const rx = 270 + ((i * 17) % 100);
-          const ry = 220 + ((i * 23) % 200);
-          ctx.fillRect(rx, ry, 12, 12);
-        }
+        // Real, decodable QR containing the phishing URL
+        drawQrCode(ctx, 'http://vcb-nhanthuong-otp.xyz/login', 150, 180, 300);
 
         // Malicious URL label below QR
         ctx.textAlign = 'center';
@@ -369,6 +425,78 @@ export function createPresets(): PresetItem[] {
         ctx.fillText('• Hành vi: Lừa người dùng nhập thông tin tài khoản và mã OTP ngân hàng.', 60, 755);
         ctx.fillText('• Khuyến cáo: KHÔNG quét, KHÔNG nhập OTP vào bất kỳ website nào.', 60, 785);
 
+        return c.toDataURL('image/png');
+      },
+    },
+    {
+      id: 'qr_vietqr_legit',
+      name: 'VietQR Chính Chủ (VCB)',
+      bank: 'Vietcombank',
+      type: 'qr_legit',
+      badge: 'QR Hợp Lệ',
+      badgeClass: 'badge-success',
+      description: 'Mã VietQR thật của quán — CRC khớp, trùng tài khoản đã ghim',
+      generateImage: () => {
+        const c = createCanvas(600, 900);
+        drawStandee(c, {
+          accent: '#0B6B3A',
+          printedName: 'NGUYEN HOANG MINH',
+          printedBank: 'Vietcombank',
+          printedAccount: '1029384756',
+          qrText: buildVietQr({ bankBin: '970436', accountNumber: '1029384756', merchantName: 'NGUYEN HOANG MINH' }),
+          footnote: 'Mã QR in sẵn • Không dán đè',
+        });
+        return c.toDataURL('image/png');
+      },
+    },
+    {
+      id: 'qr_vietqr_swapped',
+      name: 'QR Dán Đè (CRC vẫn hợp lệ)',
+      bank: 'MB Bank',
+      type: 'qr_swapped',
+      badge: 'QR Dán Đè',
+      badgeClass: 'badge-danger',
+      description: 'Sticker VietQR của kẻ gian dán lên biển quán — chỉ QR Pinning phát hiện',
+      generateImage: () => {
+        const c = createCanvas(600, 900);
+        drawStandee(c, {
+          accent: '#0B6B3A',
+          printedName: 'NGUYEN HOANG MINH',
+          printedBank: 'Vietcombank',
+          printedAccount: '1029384756',
+          qrText: buildVietQr({ bankBin: '970422', accountNumber: '0987654321', merchantName: 'LE VAN THINH' }),
+          sticker: true,
+          footnote: 'Biển in tên chủ quán, nhưng mã QR đã bị thay',
+        });
+        return c.toDataURL('image/png');
+      },
+    },
+    {
+      id: 'qr_vietqr_tampered',
+      name: 'QR Bị Sửa Số Tiền (CRC sai)',
+      bank: 'Vietcombank',
+      type: 'qr_tampered',
+      badge: 'QR Bị Can Thiệp',
+      badgeClass: 'badge-danger',
+      description: 'Chuỗi QR bị sửa số tiền 250.000₫ → 950.000₫ nhưng không tính lại CRC',
+      generateImage: () => {
+        const original = buildVietQr({
+          bankBin: '970436',
+          accountNumber: '1029384756',
+          amount: 250000,
+          merchantName: 'NGUYEN HOANG MINH',
+          purpose: 'Thanh toan don 489',
+        });
+        const tampered = original.replace('5406250000', '5406950000');
+        const c = createCanvas(600, 900);
+        drawStandee(c, {
+          accent: '#0B6B3A',
+          printedName: 'NGUYEN HOANG MINH',
+          printedBank: 'Vietcombank',
+          printedAccount: '1029384756',
+          qrText: tampered,
+          footnote: 'Hóa đơn #489 • 250.000₫',
+        });
         return c.toDataURL('image/png');
       },
     },

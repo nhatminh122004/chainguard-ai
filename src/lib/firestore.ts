@@ -11,7 +11,6 @@ import {
   deleteDoc,
   query,
   where,
-  orderBy,
   limit,
   serverTimestamp,
   Timestamp,
@@ -33,7 +32,23 @@ export interface Transaction {
   date: Date | Timestamp;
   note?: string;
   verified: boolean; // on-chain verified
+  blockchain?: {
+    dataHash: string;
+    txHash: string;
+    blockNumber: number;
+    walletAddress: string;
+    contractAddress: string;
+    network: 'sepolia';
+    verifiedAt: string;
+  };
   createdAt?: Timestamp;
+}
+
+export function isTransactionOnChainVerified(transaction: Transaction): boolean {
+  return transaction.verified === true
+    && typeof transaction.blockchain?.dataHash === 'string'
+    && typeof transaction.blockchain?.txHash === 'string'
+    && Number.isInteger(transaction.blockchain?.blockNumber);
 }
 
 export interface UserSettings {
@@ -120,6 +135,8 @@ export function getLocalDemoTransactions(): Transaction[] {
     return parsed.map((t: any) => ({
       ...t,
       date: new Date(t.date),
+      // Migrate legacy demo rows which claimed verification without evidence.
+      verified: t.verified === true && typeof t.blockchain?.dataHash === 'string' && typeof t.blockchain?.txHash === 'string',
     }));
   } catch {
     return [];
@@ -238,11 +255,29 @@ export async function getRecentTransactions(userId: string, count: number = 7): 
   return getTransactions(userId, count);
 }
 
+function isLocalTransactionId(id: string): boolean {
+  return id.startsWith('demo-') || id.startsWith('local-');
+}
+
 export async function deleteTransaction(transactionId: string): Promise<void> {
+  if (isLocalTransactionId(transactionId)) {
+    saveLocalDemoTransactions(getLocalDemoTransactions().filter((t) => t.id !== transactionId));
+    return;
+  }
   await deleteDoc(doc(db, 'transactions', transactionId));
 }
 
 export async function updateTransaction(transactionId: string, data: Partial<Transaction>): Promise<void> {
+  if (isLocalTransactionId(transactionId)) {
+    saveLocalDemoTransactions(
+      getLocalDemoTransactions().map((t) => {
+        if (t.id !== transactionId) return t;
+        const date = data.date instanceof Timestamp ? data.date.toDate() : data.date ?? t.date;
+        return { ...t, ...data, date };
+      })
+    );
+    return;
+  }
   const updateData: Record<string, unknown> = { ...data };
   if (data.date instanceof Date) {
     updateData.date = Timestamp.fromDate(data.date);
@@ -274,11 +309,20 @@ export async function getDashboardStats(userId: string): Promise<DashboardStats>
     .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
   const totalBalance = transactions.reduce((sum, t) => sum + t.amount, 0);
-  const verifiedCount = transactions.filter((t) => t.verified).length;
+  const verifiedCount = transactions.filter(isTransactionOnChainVerified).length;
 
-  // Get credit score from user doc
-  const userDoc = await getDoc(doc(db, 'users', userId));
-  const creditScore = userDoc.data()?.creditScore || 500;
+  // Get credit score from user doc (demo users have no Firebase auth → skip Firestore)
+  let creditScore = 500;
+  if (isDemoUser(userId)) {
+    creditScore = getLocalDemoUserDoc().creditScore ?? 500;
+  } else {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      creditScore = userDoc.data()?.creditScore || 500;
+    } catch (err: any) {
+      console.warn('Firestore getDashboardStats (users doc) fallback to default score:', err?.message);
+    }
+  }
 
   return {
     totalBalance,
@@ -367,7 +411,7 @@ export async function calculateCreditScore(userId: string): Promise<number> {
 
   // Factor 5: Verified transactions (10%)
   const verifiedRatio = transactions.length > 0
-    ? transactions.filter((t) => t.verified).length / transactions.length
+    ? transactions.filter(isTransactionOnChainVerified).length / transactions.length
     : 0;
   const verifiedScore = verifiedRatio * 100;
 
@@ -382,10 +426,18 @@ export async function calculateCreditScore(userId: string): Promise<number> {
   const creditScore = Math.round(300 + (rawScore / 100) * 550);
 
   // Update user document
-  await updateDoc(doc(db, 'users', userId), {
-    creditScore,
-    lastCreditUpdate: serverTimestamp(),
-  });
+  if (isDemoUser(userId)) {
+    saveLocalDemoUserDoc({ ...getLocalDemoUserDoc(), creditScore });
+  } else {
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        creditScore,
+        lastCreditUpdate: serverTimestamp(),
+      });
+    } catch (err: any) {
+      console.warn('Firestore calculateCreditScore update skipped:', err?.message);
+    }
+  }
 
   return creditScore;
 }
@@ -425,7 +477,7 @@ export function getScoreFactors(transactions: Transaction[]): { name: string; sc
   const historyScore = Math.round(Math.min(historyDays / 180, 1) * 100);
 
   const verifiedRatio = transactions.length > 0
-    ? transactions.filter((t) => t.verified).length / transactions.length
+    ? transactions.filter(isTransactionOnChainVerified).length / transactions.length
     : 0;
   const verifiedScore = Math.round(verifiedRatio * 100);
 
@@ -581,11 +633,30 @@ export function detectSuspiciousTransactions(transactions: Transaction[]): { tra
 // User Settings
 // ============================================
 
-export async function getUserSettings(userId: string): Promise<UserSettings | null> {
-  const userDoc = await getDoc(doc(db, 'users', userId));
-  if (!userDoc.exists()) return null;
+// Demo users have no Firebase Auth session, so their "users" doc lives in localStorage.
+const DEMO_USER_DOC_KEY = 'chainguard_demo_user_doc';
 
-  const data = userDoc.data();
+interface LocalDemoUserDoc {
+  displayName?: string;
+  creditScore?: number;
+  settings?: { currency?: string; language?: string; notifications?: Partial<UserSettings['notifications']> };
+}
+
+function getLocalDemoUserDoc(): LocalDemoUserDoc {
+  if (typeof window === 'undefined') return {};
+  try {
+    return JSON.parse(localStorage.getItem(DEMO_USER_DOC_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function saveLocalDemoUserDoc(data: LocalDemoUserDoc) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(DEMO_USER_DOC_KEY, JSON.stringify(data));
+}
+
+function toUserSettings(data: LocalDemoUserDoc | Record<string, any>): UserSettings {
   return {
     displayName: data.displayName || 'User',
     currency: data.settings?.currency || 'VND',
@@ -599,7 +670,40 @@ export async function getUserSettings(userId: string): Promise<UserSettings | nu
   };
 }
 
+export async function getUserSettings(userId: string): Promise<UserSettings | null> {
+  if (isDemoUser(userId)) {
+    const local = getLocalDemoUserDoc();
+    return local.displayName || local.settings ? toUserSettings(local) : null;
+  }
+
+  try {
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (!userDoc.exists()) return null;
+    return toUserSettings(userDoc.data());
+  } catch (err: any) {
+    console.warn('Firestore getUserSettings fallback to defaults:', err?.message);
+    return null;
+  }
+}
+
 export async function updateUserSettings(userId: string, settings: Partial<UserSettings>): Promise<void> {
+  if (isDemoUser(userId)) {
+    const local = getLocalDemoUserDoc();
+    saveLocalDemoUserDoc({
+      ...local,
+      ...(settings.displayName !== undefined && { displayName: settings.displayName }),
+      settings: {
+        ...local.settings,
+        ...(settings.currency !== undefined && { currency: settings.currency }),
+        ...(settings.language !== undefined && { language: settings.language }),
+        ...(settings.notifications !== undefined && {
+          notifications: { ...local.settings?.notifications, ...settings.notifications },
+        }),
+      },
+    });
+    return;
+  }
+
   const updateData: Record<string, unknown> = {};
 
   if (settings.displayName !== undefined) {
@@ -617,6 +721,7 @@ export async function updateUserSettings(userId: string, settings: Partial<UserS
     });
   }
 
+  // Real users: let permission errors propagate so the UI reports a failed save honestly.
   await updateDoc(doc(db, 'users', userId), updateData);
 }
 
@@ -628,16 +733,16 @@ export async function seedDemoTransactions(userId: string): Promise<void> {
   const isDemo = isDemoUser(userId);
   const now = new Date();
   const demoData: Transaction[] = [
-    { id: 'demo-tx-1', userId, name: 'Lương tháng ' + (now.getMonth() + 1), amount: 15000000, category: 'Thu nhập', icon: '💰', date: new Date(now.getFullYear(), now.getMonth(), 5), verified: true, note: 'Lương công ty' },
-    { id: 'demo-tx-2', userId, name: 'Grab Food - Phở Hà Nội', amount: -125000, category: 'Ăn uống', icon: '🍔', date: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000), verified: true },
+    { id: 'demo-tx-1', userId, name: 'Lương tháng ' + (now.getMonth() + 1), amount: 15000000, category: 'Thu nhập', icon: '💰', date: new Date(now.getFullYear(), now.getMonth(), 5), verified: false, note: 'Lương công ty' },
+    { id: 'demo-tx-2', userId, name: 'Grab Food - Phở Hà Nội', amount: -125000, category: 'Ăn uống', icon: '🍔', date: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000), verified: false },
     { id: 'demo-tx-3', userId, name: 'Shopee - Tai nghe Bluetooth', amount: -450000, category: 'Mua sắm', icon: '🛍️', date: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000), verified: false },
-    { id: 'demo-tx-4', userId, name: 'EVN - Tiền điện', amount: -320000, category: 'Hóa đơn', icon: '⚡', date: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000), verified: true },
-    { id: 'demo-tx-5', userId, name: 'Freelance - UI/UX Design', amount: 3500000, category: 'Thu nhập', icon: '💻', date: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000), verified: true },
+    { id: 'demo-tx-4', userId, name: 'EVN - Tiền điện', amount: -320000, category: 'Hóa đơn', icon: '⚡', date: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000), verified: false },
+    { id: 'demo-tx-5', userId, name: 'Freelance - UI/UX Design', amount: 3500000, category: 'Thu nhập', icon: '💻', date: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000), verified: false },
     { id: 'demo-tx-6', userId, name: 'Highlands Coffee', amount: -55000, category: 'Ăn uống', icon: '☕', date: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000), verified: false },
-    { id: 'demo-tx-7', userId, name: 'Grab Bike - Q1 → Q7', amount: -45000, category: 'Di chuyển', icon: '🏍️', date: new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000), verified: true },
+    { id: 'demo-tx-7', userId, name: 'Grab Bike - Q1 → Q7', amount: -45000, category: 'Di chuyển', icon: '🏍️', date: new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000), verified: false },
     { id: 'demo-tx-8', userId, name: 'Netflix', amount: -99000, category: 'Giải trí', icon: '🎬', date: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), verified: false },
-    { id: 'demo-tx-9', userId, name: 'Internet VNPT', amount: -250000, category: 'Hóa đơn', icon: '🌐', date: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000), verified: true },
-    { id: 'demo-tx-10', userId, name: 'Tiền thuê nhà T' + (now.getMonth() + 1), amount: -4500000, category: 'Hóa đơn', icon: '🏠', date: new Date(now.getFullYear(), now.getMonth(), 1), verified: true },
+    { id: 'demo-tx-9', userId, name: 'Internet VNPT', amount: -250000, category: 'Hóa đơn', icon: '🌐', date: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000), verified: false },
+    { id: 'demo-tx-10', userId, name: 'Tiền thuê nhà T' + (now.getMonth() + 1), amount: -4500000, category: 'Hóa đơn', icon: '🏠', date: new Date(now.getFullYear(), now.getMonth(), 1), verified: false },
   ];
 
   if (isDemo) {

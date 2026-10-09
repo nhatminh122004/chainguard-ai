@@ -8,6 +8,7 @@ import {
   Transaction,
   seedDemoTransactions,
   updateTransaction,
+  isTransactionOnChainVerified,
 } from '@/lib/firestore';
 import { Timestamp } from 'firebase/firestore';
 import {
@@ -33,7 +34,6 @@ export default function BlockchainPage() {
   const [recording, setRecording] = useState<string | null>(null); // tx id being recorded
   const [batchRecording, setBatchRecording] = useState(false);
   const [chainStats, setChainStats] = useState<BlockchainStats | null>(null);
-  const [recentTxHashes, setRecentTxHashes] = useState<Record<string, string>>({}); // txId -> blockchain txHash
   const configured = isBlockchainConfigured();
 
   const loadData = useCallback(async () => {
@@ -98,6 +98,7 @@ export default function BlockchainPage() {
     try {
       const txDate = tx.date instanceof Date ? tx.date : (tx.date as Timestamp).toDate();
       const result = await recordTransactionOnChain(
+        tx.id || '',
         tx.name,
         tx.amount,
         tx.category,
@@ -107,8 +108,18 @@ export default function BlockchainPage() {
 
       // Update Firestore to mark as verified
       if (tx.id) {
-        await updateTransaction(tx.id, { verified: true });
-        setRecentTxHashes(prev => ({ ...prev, [tx.id!]: result.txHash }));
+        await updateTransaction(tx.id, {
+          verified: true,
+          blockchain: {
+            dataHash: result.dataHash,
+            txHash: result.txHash,
+            blockNumber: result.blockNumber,
+            walletAddress: result.walletAddress,
+            contractAddress: result.contractAddress,
+            network: 'sepolia',
+            verifiedAt: new Date().toISOString(),
+          },
+        });
       }
 
       showToast('success', 'Đã ghi On-Chain!', 'Xem trên Etherscan ↗');
@@ -137,7 +148,7 @@ export default function BlockchainPage() {
       return;
     }
 
-    const unverified = transactions.filter(t => !t.verified);
+    const unverified = transactions.filter(t => !isTransactionOnChainVerified(t));
     if (unverified.length === 0) {
       showToast('info', 'Không có gì để ghi', 'Tất cả giao dịch đã verified');
       return;
@@ -147,14 +158,26 @@ export default function BlockchainPage() {
     try {
       const txData = unverified.slice(0, 20).map(t => {
         const d = t.date instanceof Date ? t.date : (t.date as Timestamp).toDate();
-        return { name: t.name, amount: t.amount, category: t.category, date: d.toISOString(), userId: t.userId };
+        return { id: t.id || '', name: t.name, amount: t.amount, category: t.category, date: d.toISOString(), userId: t.userId };
       });
 
       const result = await batchRecordOnChain(txData);
 
       // Update Firestore
       for (const tx of unverified.slice(0, 20)) {
-        if (tx.id) await updateTransaction(tx.id, { verified: true });
+        const record = result.records.find(item => item.transactionId === tx.id);
+        if (tx.id && record) await updateTransaction(tx.id, {
+          verified: true,
+          blockchain: {
+            dataHash: record.dataHash,
+            txHash: result.txHash,
+            blockNumber: result.blockNumber,
+            walletAddress: result.walletAddress,
+            contractAddress: result.contractAddress,
+            network: 'sepolia',
+            verifiedAt: new Date().toISOString(),
+          },
+        });
       }
 
       showToast('success', `Đã ghi ${result.count} giao dịch!`, 'Batch verified on-chain');
@@ -169,8 +192,8 @@ export default function BlockchainPage() {
     }
   };
 
-  const verifiedTx = transactions.filter((t) => t.verified);
-  const unverifiedTx = transactions.filter((t) => !t.verified);
+  const verifiedTx = transactions.filter(isTransactionOnChainVerified);
+  const unverifiedTx = transactions.filter((t) => !isTransactionOnChainVerified(t));
   const totalVerified = verifiedTx.length;
   const verifiedPercentage = transactions.length > 0 ? Math.round((totalVerified / transactions.length) * 100) : 0;
 
@@ -333,7 +356,7 @@ export default function BlockchainPage() {
             </ul>
             {unverifiedTx.length > 10 && (
               <p style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '0.8rem', marginTop: 'var(--space-md)' }}>
-                và {unverifiedTx.length - 10} giao dịch khác... Dùng "Verify All" ở trên
+                và {unverifiedTx.length - 10} giao dịch khác... Dùng &quot;Verify All&quot; ở trên
               </p>
             )}
           </div>
@@ -358,7 +381,7 @@ export default function BlockchainPage() {
             <ul className="transaction-list">
               {verifiedTx.slice(0, 15).map((tx) => {
                 const txDate = tx.date instanceof Date ? tx.date : (tx.date as Timestamp).toDate();
-                const blockchainHash = recentTxHashes[tx.id || ''];
+                const blockchainHash = tx.blockchain?.txHash;
                 return (
                   <li key={tx.id} className="transaction-item">
                     <div className="transaction-icon" style={{ background: 'rgba(108, 99, 255, 0.1)' }}>🔗</div>

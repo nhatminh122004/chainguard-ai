@@ -12,6 +12,7 @@ import {
   Transaction,
   getCategoryConfig,
   seedDemoTransactions,
+  isTransactionOnChainVerified,
 } from '@/lib/firestore';
 
 type SortField = 'date' | 'amount';
@@ -91,7 +92,7 @@ export default function TransactionsPage() {
         tx.amount.toString(),
         `"${tx.category}"`,
         d.toLocaleDateString('vi-VN'),
-        tx.verified ? 'Có' : 'Không',
+        isTransactionOnChainVerified(tx) ? 'Có' : 'Không',
         `"${tx.note || ''}"`,
       ].join(',');
     });
@@ -132,7 +133,7 @@ export default function TransactionsPage() {
   const monthlyExpense = transactions
     .filter((t) => t.amount < 0)
     .reduce((s, t) => s + Math.abs(t.amount), 0);
-  const verifiedCount = transactions.filter((t) => t.verified).length;
+  const verifiedCount = transactions.filter(isTransactionOnChainVerified).length;
 
   const formatShort = (n: number) => {
     if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
@@ -270,7 +271,7 @@ export default function TransactionsPage() {
                     <div className="transaction-info">
                       <div className="transaction-name">
                         {tx.name}
-                        {tx.verified && (
+                        {isTransactionOnChainVerified(tx) && (
                           <span className="badge badge-success" style={{ marginLeft: '8px', fontSize: '0.6rem' }}>
                             🔗 Verified
                           </span>

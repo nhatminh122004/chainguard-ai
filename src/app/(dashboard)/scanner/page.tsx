@@ -1,21 +1,12 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { getGeminiVisionModel } from '@/lib/gemini';
+import { scanReceipt as scanReceiptWithAi, ReceiptData } from '@/lib/gemini';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/Toast/Toast';
 import { addTransaction, getCategoryConfig } from '@/lib/firestore';
 import { useRouter } from 'next/navigation';
 import './scanner.css';
-
-interface ReceiptData {
-  merchant: string;
-  date: string;
-  total: string;
-  category: string;
-  items: { name: string; price: string }[];
-  currency: string;
-}
 
 export default function ScannerPage() {
   const { user } = useAuth();
@@ -31,6 +22,16 @@ export default function ScannerPage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 8 * 1024 * 1024) {
+        setError('Ảnh vượt quá giới hạn 8MB.');
+        e.target.value = '';
+        return;
+      }
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+        setError('Chỉ hỗ trợ ảnh JPEG, PNG hoặc WEBP.');
+        e.target.value = '';
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (event) => {
         setImage(event.target?.result as string);
@@ -48,45 +49,11 @@ export default function ScannerPage() {
     setError(null);
 
     try {
-      const model = getGeminiVisionModel();
-
       const base64Data = image.split(',')[1];
       const mimeType = image.split(';')[0].split(':')[1];
-
-      const prompt = `Bạn là một AI chuyên phân tích hóa đơn/biên lai. Hãy phân tích ảnh hóa đơn này và trả về JSON với format sau:
-{
-  "merchant": "Tên cửa hàng/nhà hàng",
-  "date": "Ngày trên hóa đơn (dd/mm/yyyy)",
-  "total": "Tổng tiền (chỉ số, không có ký tự)",
-  "category": "Danh mục (Ăn uống/Mua sắm/Di chuyển/Hóa đơn/Giải trí/Khác)",
-  "items": [{"name": "Tên sản phẩm", "price": "Giá"}],
-  "currency": "VND hoặc USD"
-}
-
-CHỈ trả về JSON, không thêm text khác.`;
-
-      const result = await model.generateContent([
-        prompt,
-        {
-          inlineData: {
-            data: base64Data,
-            mimeType: mimeType,
-          },
-        },
-      ]);
-
-      const response = await result.response;
-      const text = response.text();
-
-      // Parse JSON from response
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const data = JSON.parse(jsonMatch[0]);
-        setReceiptData(data);
-        showToast('success', 'Quét thành công!', `Phát hiện hóa đơn từ ${data.merchant}`);
-      } else {
-        setError('Không thể phân tích hóa đơn. Vui lòng thử lại với ảnh rõ hơn.');
-      }
+      const data = await scanReceiptWithAi(base64Data, mimeType);
+      setReceiptData(data);
+      showToast('success', 'Quét thành công!', `Phát hiện hóa đơn từ ${data.merchant}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Lỗi khi quét hóa đơn';
       setError(message + '. Kiểm tra API key Gemini.');

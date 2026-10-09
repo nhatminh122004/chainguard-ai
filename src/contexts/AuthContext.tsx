@@ -160,6 +160,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInDemo = async (): Promise<boolean> => {
     try {
       setError(null);
+      const response = await fetch('/api/auth/demo', { method: 'POST', credentials: 'same-origin' });
+      if (!response.ok) throw new Error('Demo session is not configured');
       if (typeof window !== 'undefined') {
         localStorage.setItem('chainguard_demo_session', 'true');
       }
@@ -178,6 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     try {
+      await fetch('/api/auth/demo', { method: 'DELETE', credentials: 'same-origin' }).catch(() => undefined);
       if (typeof window !== 'undefined') {
         localStorage.removeItem('chainguard_demo_session');
       }

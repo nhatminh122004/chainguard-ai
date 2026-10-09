@@ -13,7 +13,9 @@ import {
   FraudAlert,
   Transaction,
   seedDemoTransactions,
+  isTransactionOnChainVerified,
 } from '@/lib/firestore';
+import { apiFetch } from '@/lib/api-client';
 
 export default function FraudPage() {
   const { user } = useAuth();
@@ -24,7 +26,6 @@ export default function FraudPage() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [serverScanning, setServerScanning] = useState(false);
-  const [serverResults, setServerResults] = useState<any>(null);
 
   const loadData = useCallback(async () => {
     if (!user) return;
@@ -115,18 +116,14 @@ export default function FraudPage() {
           amount: t.amount,
           category: t.category,
           date: d.toISOString(),
-          verified: t.verified,
+          verified: isTransactionOnChainVerified(t),
         };
       });
 
-      const res = await fetch('/api/fraud-scan', {
+      const data = await apiFetch<{ alerts: Array<{ transactionName: string; amount: number; reason: string; severity: string }>; alertsFound: number; rules: unknown[] }>('/api/fraud-scan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transactions: txData }),
       });
-
-      const data = await res.json();
-      setServerResults(data);
 
       // Create alerts for server findings
       if (data.alerts && data.alerts.length > 0) {

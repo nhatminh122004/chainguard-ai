@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/Toast/Toast';
-import { getGeminiModel } from '@/lib/gemini';
+import { generateFinancialText } from '@/lib/gemini';
+import { escapeHtml, formatBasicMarkdownToSafeHtml } from '@/lib/safe-html';
 import {
   getTransactions,
   getDashboardStats,
@@ -13,14 +14,13 @@ import {
   Transaction,
   DashboardStats,
   seedDemoTransactions,
+  isTransactionOnChainVerified,
 } from '@/lib/firestore';
 import { Timestamp } from 'firebase/firestore';
 import {
   exportToGoogleSheets,
   sendGmailReport,
   buildReportEmailHTML,
-  isGoogleConnected,
-  requestGoogleAccess,
 } from '@/lib/google-apis';
 import './report.css';
 
@@ -28,6 +28,25 @@ interface ReportSection {
   title: string;
   icon: string;
   content: string;
+}
+
+function SafeFormattedText({ content, className }: { content: string; className?: string }) {
+  const renderInline = (line: string) => line.split(/(\*\*.*?\*\*|\*.*?\*)/g).map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) return <strong key={index}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith('*') && part.endsWith('*')) return <em key={index}>{part.slice(1, -1)}</em>;
+    return <React.Fragment key={index}>{part}</React.Fragment>;
+  });
+
+  return (
+    <div className={className}>
+      {content.split('\n').map((line, index) => (
+        <React.Fragment key={index}>
+          {renderInline(line)}
+          {index < content.split('\n').length - 1 && <br />}
+        </React.Fragment>
+      ))}
+    </div>
+  );
 }
 
 export default function AIReportPage() {
@@ -160,7 +179,6 @@ ${incomeList.map((t) => `${t.name}: ${formatCurrency(t.amount)}`).join('\n') || 
     setActiveTab('report');
 
     try {
-      const model = getGeminiModel();
       const financialContext = buildFinancialContext();
 
       const prompt = `Dựa trên dữ liệu tài chính thực tế sau, hãy tạo BÁO CÁO TÀI CHÍNH TOÀN DIỆN bằng tiếng Việt.
@@ -193,9 +211,7 @@ YÊU CẦU:
 - Giọng văn chuyên nghiệp nhưng dễ hiểu
 - Mỗi section dài 3-5 câu / 4-6 bullet points`;
 
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
+      const text = await generateFinancialText(prompt, 'financial-report');
 
       setReport(text);
       setGeneratedAt(new Date());
@@ -218,7 +234,6 @@ YÊU CẦU:
     setActiveTab('nextmonth');
 
     try {
-      const model = getGeminiModel();
       const financialContext = buildFinancialContext();
       const now = new Date();
       const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
@@ -259,9 +274,7 @@ YÊU CẦU:
 - Thực tế, không lý thuyết suông
 - Mỗi section dài 4-6 bullet points`;
 
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
+      const text = await generateFinancialText(prompt, 'financial-plan');
 
       setNextMonthPlan(text);
       setNextMonthSections(parseSections(text));
@@ -276,10 +289,7 @@ YÊU CẦU:
   };
 
   const formatReportContent = (content: string) => {
-    return content
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/\n/g, '<br/>');
+    return formatBasicMarkdownToSafeHtml(content);
   };
 
   const copyReport = () => {
@@ -343,7 +353,7 @@ YÊU CẦU:
       // Sheet 3: Transactions
       const txRows = transactions.slice(0, 100).map(t => {
         const d = t.date instanceof Date ? t.date : (t.date as Timestamp).toDate();
-        return [d.toLocaleDateString('vi-VN'), t.name, t.category, t.amount, t.verified ? '✅' : '❌'];
+        return [d.toLocaleDateString('vi-VN'), t.name, t.category, t.amount, isTransactionOnChainVerified(t) ? '✅' : '❌'];
       });
 
       // Sheet 4: AI Report content
@@ -417,7 +427,7 @@ YÊU CẦU:
     const sectionsHTML = sections.length > 0
       ? sections.map(s => `
         <div class="section">
-          <h2>${s.icon} ${s.title}</h2>
+          <h2>${escapeHtml(s.icon)} ${escapeHtml(s.title)}</h2>
           <div class="section-body">${formatReportContent(s.content)}</div>
         </div>
       `).join('\n')
@@ -428,7 +438,7 @@ YÊU CẦU:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title} — ChainGuard AI</title>
+  <title>${escapeHtml(title)} — ChainGuard AI</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -538,7 +548,7 @@ YÊU CẦU:
 <body>
   <div class="header">
     <div class="header-badge">✨ Gemini AI Report — ChainGuard AI</div>
-    <h1>${title} — <span>${user?.displayName || 'User'}</span></h1>
+    <h1>${escapeHtml(title)} — <span>${escapeHtml(user?.displayName || 'User')}</span></h1>
     <p class="subtitle">Ngày tạo: ${new Date().toLocaleString('vi-VN')} • ${transactions.length} giao dịch đã phân tích</p>
   </div>
 
@@ -877,10 +887,7 @@ YÊU CẦU:
                     <div className="report-section-icon">{section.icon}</div>
                     <h3 className="report-section-title">{section.title}</h3>
                   </div>
-                  <div
-                    className="report-section-body"
-                    dangerouslySetInnerHTML={{ __html: formatReportContent(section.content) }}
-                  />
+                  <SafeFormattedText className="report-section-body" content={section.content} />
                 </div>
               ))}
 
@@ -927,10 +934,7 @@ YÊU CẦU:
                 <h3 className="card-title">📄 {activeTab === 'report' ? 'Báo Cáo AI' : 'Kế Hoạch AI'}</h3>
                 <span className="badge badge-success">✅ Đã tạo</span>
               </div>
-              <div
-                className="card-body report-raw"
-                dangerouslySetInnerHTML={{ __html: formatReportContent(currentRaw) }}
-              />
+              <SafeFormattedText className="card-body report-raw" content={currentRaw} />
               <div className="report-actions" style={{ padding: 'var(--space-lg)' }}>
                 <button className="btn btn-secondary" onClick={exportAsHTML}>🌐 Xuất HTML</button>
                 <button className="btn btn-secondary" onClick={exportAsTextFile}>📝 Xuất TXT</button>

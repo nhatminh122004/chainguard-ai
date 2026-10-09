@@ -15,6 +15,7 @@ import {
   Transaction,
   DashboardStats,
   getCategoryConfig,
+  isTransactionOnChainVerified,
 } from '@/lib/firestore';
 import { SpendingDoughnutChart, TrendLineChart, MonthlyBarChart } from '@/components/Charts/Charts';
 import { Timestamp } from 'firebase/firestore';
@@ -281,7 +282,7 @@ export default function DashboardPage() {
                       <div className="transaction-info">
                         <div className="transaction-name">
                           {tx.name}
-                          {tx.verified && (
+                          {isTransactionOnChainVerified(tx) && (
                             <span className="badge badge-success" style={{ marginLeft: '8px', fontSize: '0.55rem', padding: '2px 6px' }}>
                               🔗 On-Chain
                             </span>

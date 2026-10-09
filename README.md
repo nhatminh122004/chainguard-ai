@@ -202,7 +202,8 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
 
 # Gemini AI
-NEXT_PUBLIC_GEMINI_API_KEY=your_gemini_api_key
+GEMINI_API_KEY=your_gemini_api_key
+DEMO_SESSION_SECRET=your_random_secret_at_least_32_characters
 
 # Blockchain (Sepolia)
 NEXT_PUBLIC_ALCHEMY_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/your_key

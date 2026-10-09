@@ -154,6 +154,14 @@
   max-width: 320px;
 }
 
+.dropzone-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
 /* Preview Image Card */
 .preview-container {
   display: flex;

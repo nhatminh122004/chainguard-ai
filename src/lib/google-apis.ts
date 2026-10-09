@@ -315,8 +315,14 @@ export function buildReportEmailHTML(
     creditScore: number;
   }
 ): string {
-  // Convert markdown-like formatting to HTML
-  const formattedContent = reportContent
+  const escapeHtml = (value: string) => value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+  // Escape untrusted content before applying the small supported markdown subset.
+  const formattedContent = escapeHtml(reportContent)
     .replace(/## (.*)/g, '<h2 style="color:#6C63FF;border-bottom:1px solid #eee;padding-bottom:8px;margin-top:24px;">$1</h2>')
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/g, '<em>$1</em>')
@@ -332,22 +338,22 @@ export function buildReportEmailHTML(
     <div style="background:linear-gradient(135deg,#1a1a3e,#0d0d2b);padding:32px 24px;color:white;">
       <div style="font-size:12px;color:#a5a0ff;margin-bottom:8px;">🛡️ ChainGuard AI — Financial Report</div>
       <h1 style="margin:0;font-size:22px;">Báo Cáo Tài Chính</h1>
-      <p style="margin:4px 0 0;color:#8888aa;font-size:14px;">${userName} — ${new Date().toLocaleDateString('vi-VN')}</p>
+      <p style="margin:4px 0 0;color:#8888aa;font-size:14px;">${escapeHtml(userName)} — ${new Date().toLocaleDateString('vi-VN')}</p>
     </div>
 
     <!-- Stats -->
     <div style="display:flex;padding:16px 24px;background:#fafafa;border-bottom:1px solid #eee;">
       <div style="flex:1;text-align:center;">
         <div style="font-size:11px;color:#888;text-transform:uppercase;">Số dư</div>
-        <div style="font-size:16px;font-weight:700;color:#0288d1;">${stats.balance}</div>
+        <div style="font-size:16px;font-weight:700;color:#0288d1;">${escapeHtml(stats.balance)}</div>
       </div>
       <div style="flex:1;text-align:center;">
         <div style="font-size:11px;color:#888;text-transform:uppercase;">Thu nhập</div>
-        <div style="font-size:16px;font-weight:700;color:#00a651;">${stats.income}</div>
+        <div style="font-size:16px;font-weight:700;color:#00a651;">${escapeHtml(stats.income)}</div>
       </div>
       <div style="flex:1;text-align:center;">
         <div style="font-size:11px;color:#888;text-transform:uppercase;">Chi tiêu</div>
-        <div style="font-size:16px;font-weight:700;color:#e53935;">${stats.expense}</div>
+        <div style="font-size:16px;font-weight:700;color:#e53935;">${escapeHtml(stats.expense)}</div>
       </div>
       <div style="flex:1;text-align:center;">
         <div style="font-size:11px;color:#888;text-transform:uppercase;">Credit</div>

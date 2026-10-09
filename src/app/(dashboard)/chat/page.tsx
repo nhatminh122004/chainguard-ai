@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { getGeminiModel } from '@/lib/gemini';
+import { generateChatResponse } from '@/lib/gemini';
 import { useAuth } from '@/contexts/AuthContext';
 import './chat.css';
 
@@ -70,20 +70,13 @@ Hãy hỏi tôi bất cứ điều gì về tài chính nhé! 🚀`,
     setIsLoading(true);
 
     try {
-      const model = getGeminiModel();
-      
-      // Build chat history
       const history = messages
         .filter((m) => m.id !== 'welcome')
         .map((m) => ({
-          role: m.role === 'user' ? 'user' as const : 'model' as const,
-          parts: [{ text: m.content }],
+          role: m.role,
+          content: m.content,
         }));
-
-      const chat = model.startChat({ history });
-      const result = await chat.sendMessage(content.trim());
-      const response = await result.response;
-      const text = response.text();
+      const text = await generateChatResponse(content.trim(), history);
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -117,14 +110,6 @@ Bạn có thể thử lại sau! 🔄`,
       e.preventDefault();
       sendMessage(input);
     }
-  };
-
-  const formatMessageContent = (content: string) => {
-    // Basic markdown-like formatting
-    return content
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/\n/g, '<br/>');
   };
 
   return (
@@ -170,10 +155,7 @@ Bạn có thể thử lại sau! 🔄`,
                   {msg.timestamp.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
-              <div
-                className="message-text"
-                dangerouslySetInnerHTML={{ __html: formatMessageContent(msg.content) }}
-              />
+              <div className="message-text">{msg.content}</div>
             </div>
           </div>
         ))}

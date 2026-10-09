@@ -18,7 +18,7 @@ function Particles() {
     if (!ctx) return;
 
     let animationId: number;
-    let particles: Array<{
+    const particles: Array<{
       x: number; y: number; vx: number; vy: number;
       size: number; opacity: number; color: string;
     }> = [];
@@ -133,7 +133,6 @@ function AnimatedCounter({ target, suffix = '' }: { target: number; suffix?: str
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          let start = 0;
           const duration = 2000;
           const startTime = performance.now();
           const step = (currentTime: number) => {

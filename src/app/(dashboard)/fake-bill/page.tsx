@@ -1,12 +1,17 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { analyzeFakeBillAndQR, FakeBillAnalysisResult } from '@/lib/gemini';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/Toast/Toast';
 import { createFraudAlert } from '@/lib/firestore';
 import { useRouter } from 'next/navigation';
 import { createPresets, PresetItem } from './samplePresets';
+import CameraScanner, { CameraMode } from '@/components/CameraScanner/CameraScanner';
+import QrAnalysisPanel from '@/components/QrAnalysisPanel/QrAnalysisPanel';
+import { analyzeQrPayload, QrAnalysis } from '@/lib/vietqr';
+import { decodeQrFromDataUrl } from '@/lib/qr-decoder';
+import { addPinnedAccount, getPinnedAccounts, onPinsChanged } from '@/lib/merchant-pins';
 import './fake-bill.css';
 
 export default function FakeBillPage() {
@@ -24,6 +29,13 @@ export default function FakeBillPage() {
   const [isAlertSaved, setIsAlertSaved] = useState(false);
   const [presets, setPresets] = useState<PresetItem[]>([]);
 
+  // Camera + on-device VietQR analysis
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraMode, setCameraMode] = useState<CameraMode>('qr');
+  const [qrPayload, setQrPayload] = useState<string | null>(null);
+  const [qrAnalysis, setQrAnalysis] = useState<QrAnalysis | null>(null);
+  const [isDecodingQr, setIsDecodingQr] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize presets on client
@@ -31,25 +43,84 @@ export default function FakeBillPage() {
     setPresets(createPresets());
   }, []);
 
+  // Re-evaluate the current QR whenever pinned accounts change
+  useEffect(() => {
+    if (!qrPayload) return;
+    return onPinsChanged(() => setQrAnalysis(analyzeQrPayload(qrPayload, getPinnedAccounts())));
+  }, [qrPayload]);
+
+  const clearQr = () => {
+    setQrPayload(null);
+    setQrAnalysis(null);
+  };
+
+  const announceQr = useCallback(
+    (analysis: QrAnalysis) => {
+      if (analysis.verdict === 'DANGER') {
+        showToast('error', 'MÃ QR NGUY HIỂM!', analysis.findings.find((f) => f.level === 'danger')?.message.slice(0, 90) || '');
+      } else if (analysis.verdict === 'SUSPICIOUS') {
+        showToast('warning', 'Mã QR cần đối chiếu', `Điểm rủi ro ${analysis.riskScore}/100`);
+      } else {
+        showToast('success', 'Mã VietQR hợp lệ', analysis.data?.bankName || 'CRC khớp');
+      }
+    },
+    [showToast]
+  );
+
+  const applyQrPayload = useCallback(
+    (payload: string) => {
+      const analysis = analyzeQrPayload(payload, getPinnedAccounts());
+      setQrPayload(payload);
+      setQrAnalysis(analysis);
+      announceQr(analysis);
+    },
+    [announceQr]
+  );
+
+  /** Decodes any QR inside the image on-device (no Gemini call needed). */
+  const runLocalQrCheck = useCallback(
+    async (dataUrl: string) => {
+      setIsDecodingQr(true);
+      try {
+        const payload = await decodeQrFromDataUrl(dataUrl);
+        if (payload) applyQrPayload(payload);
+        else clearQr();
+      } catch {
+        clearQr();
+      } finally {
+        setIsDecodingQr(false);
+      }
+    },
+    [applyQrPayload]
+  );
+
+  const loadImageFile = (file: File) => {
+    if (file.size > 8 * 1024 * 1024) {
+      showToast('error', 'File quá lớn', 'Vui lòng chọn ảnh không quá 8MB');
+      return;
+    }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      showToast('error', 'Định dạng không hỗ trợ', 'Chỉ chấp nhận JPEG, PNG hoặc WEBP');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      setImage(dataUrl);
+      setMimeType(file.type || 'image/png');
+      setResult(null);
+      setError(null);
+      setActivePreset(null);
+      setIsAlertSaved(false);
+      runLocalQrCheck(dataUrl);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 12 * 1024 * 1024) {
-        showToast('error', 'File quá lớn', 'Vui lòng chọn ảnh dưới 12MB');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUrl = event.target?.result as string;
-        setImage(dataUrl);
-        setMimeType(file.type || 'image/png');
-        setResult(null);
-        setError(null);
-        setActivePreset(null);
-        setIsAlertSaved(false);
-      };
-      reader.readAsDataURL(file);
-    }
+    if (file) loadImageFile(file);
+    e.target.value = '';
   };
 
   const handleSelectPreset = (preset: PresetItem) => {
@@ -60,7 +131,51 @@ export default function FakeBillPage() {
     setResult(null);
     setError(null);
     setIsAlertSaved(false);
+    clearQr();
+    runLocalQrCheck(dataUrl);
     showToast('info', `Đã chọn: ${preset.name}`, 'Nhấn "Bắt đầu giám định AI" để phân tích');
+  };
+
+  const openCamera = (mode: CameraMode) => {
+    setCameraMode(mode);
+    setCameraOpen(true);
+  };
+
+  const handleCameraQr = useCallback(
+    (payload: string, frame: string) => {
+      setCameraOpen(false);
+      if (frame) {
+        setImage(frame);
+        setMimeType('image/jpeg');
+      }
+      setResult(null);
+      setError(null);
+      setActivePreset(null);
+      setIsAlertSaved(false);
+      applyQrPayload(payload);
+    },
+    [applyQrPayload]
+  );
+
+  const handleCameraCapture = useCallback(
+    (dataUrl: string) => {
+      setCameraOpen(false);
+      setImage(dataUrl);
+      setMimeType('image/jpeg');
+      setResult(null);
+      setError(null);
+      setActivePreset(null);
+      setIsAlertSaved(false);
+      clearQr();
+      runLocalQrCheck(dataUrl);
+      showToast('success', 'Đã chụp biên lai', 'Nhấn "Bắt đầu giám định AI" để phân tích');
+    },
+    [runLocalQrCheck, showToast]
+  );
+
+  const handlePinAccount = (bankBin: string, accountNumber: string, label?: string) => {
+    addPinnedAccount({ bankBin, accountNumber, label });
+    showToast('success', 'Đã ghim tài khoản cửa hàng', 'Các lần quét sau sẽ cảnh báo nếu QR trỏ tới tài khoản khác');
   };
 
   const runAnalysis = async () => {
@@ -132,6 +247,14 @@ export default function FakeBillPage() {
           </div>
           <div className="flex gap-sm">
             <button
+              id="fake-bill-open-camera"
+              className="btn btn-primary btn-sm"
+              onClick={() => openCamera('qr')}
+              title="Quét mã QR hoặc chụp biên lai bằng camera"
+            >
+              📷 Camera
+            </button>
+            <button
               className="btn btn-secondary btn-sm"
               onClick={() => router.push('/fraud')}
               title="Xem danh sách cảnh báo tổng thể"
@@ -164,7 +287,13 @@ export default function FakeBillPage() {
                 onClick={() => handleSelectPreset(preset)}
               >
                 <span className="preset-icon">
-                  {preset.type === 'legit' ? '🟢' : preset.type === 'fake_font' ? '🔴' : preset.type === 'pending_schedule' ? '🟡' : '⚠️'}
+                  {preset.type === 'legit' || preset.type === 'qr_legit'
+                    ? '🟢'
+                    : preset.type === 'fake_font' || preset.type === 'qr_swapped' || preset.type === 'qr_tampered'
+                    ? '🔴'
+                    : preset.type === 'pending_schedule'
+                    ? '🟡'
+                    : '⚠️'}
                 </span>
                 <div className="preset-meta">
                   <span className="preset-title">{preset.name}</span>
@@ -193,16 +322,7 @@ export default function FakeBillPage() {
                 onDrop={(e) => {
                   e.preventDefault();
                   const file = e.dataTransfer.files?.[0];
-                  if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                      setImage(event.target?.result as string);
-                      setMimeType(file.type || 'image/png');
-                      setResult(null);
-                      setError(null);
-                    };
-                    reader.readAsDataURL(file);
-                  }
+                  if (file) loadImageFile(file);
                 }}
               >
                 <div className="dropzone-icon">📸</div>
@@ -210,23 +330,47 @@ export default function FakeBillPage() {
                 <p className="dropzone-hint">
                   Hỗ trợ ảnh biên lai Vietcombank, MB, Techcombank, BIDV, Vietinbank, Momo hoặc mã VietQR (PNG, JPG, WEBP)
                 </p>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  style={{ marginTop: 'var(--space-md)' }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    fileInputRef.current?.click();
-                  }}
-                >
-                  📁 Chọn ảnh từ thiết bị
-                </button>
+                <div className="dropzone-actions">
+                  <button
+                    id="fake-bill-pick-file"
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fileInputRef.current?.click();
+                    }}
+                  >
+                    📁 Chọn ảnh từ thiết bị
+                  </button>
+                  <button
+                    id="fake-bill-scan-qr"
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openCamera('qr');
+                    }}
+                  >
+                    🔳 Quét QR bằng camera
+                  </button>
+                  <button
+                    id="fake-bill-capture-receipt"
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openCamera('receipt');
+                    }}
+                  >
+                    🧾 Chụp biên lai
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="preview-container">
                 <div className="bill-preview-wrapper">
                   <img src={image} alt="Receipt or QR" className="bill-preview-img" />
-                  {isAnalyzing && <div className="scanning-scanline" />}
+                  {(isAnalyzing || isDecodingQr) && <div className="scanning-scanline" />}
                 </div>
 
                 <div className="preview-actions-bar">
@@ -253,6 +397,7 @@ export default function FakeBillPage() {
                       setError(null);
                       setActivePreset(null);
                       setIsAlertSaved(false);
+                      clearQr();
                     }}
                     disabled={isAnalyzing}
                   >
@@ -296,6 +441,8 @@ export default function FakeBillPage() {
           </div>
 
           <div className="card-body">
+            {qrAnalysis && <QrAnalysisPanel analysis={qrAnalysis} onPinAccount={handlePinAccount} />}
+
             {error && (
               <div className="form-error" style={{ marginBottom: 'var(--space-md)' }}>
                 <span>⚠️</span> {error}
@@ -314,7 +461,7 @@ export default function FakeBillPage() {
               </div>
             )}
 
-            {!isAnalyzing && !result && !error && (
+            {!isAnalyzing && !result && !error && !qrAnalysis && (
               <div style={{ textAlign: 'center', padding: 'var(--space-3xl) var(--space-md)' }}>
                 <div style={{ fontSize: '3.5rem', marginBottom: 'var(--space-md)' }}>🛡️</div>
                 <h3 style={{ marginBottom: 'var(--space-sm)' }}>Sẵn sàng giám định</h3>
@@ -567,6 +714,7 @@ export default function FakeBillPage() {
                       setImage(null);
                       setResult(null);
                       setActivePreset(null);
+                      clearQr();
                     }}
                   >
                     🔄 Quét biên lai khác
@@ -577,6 +725,18 @@ export default function FakeBillPage() {
           </div>
         </div>
       </div>
+
+      <CameraScanner
+        open={cameraOpen}
+        initialMode={cameraMode}
+        onClose={() => setCameraOpen(false)}
+        onQrDetected={handleCameraQr}
+        onCapture={handleCameraCapture}
+        onFallbackUpload={() => {
+          setCameraOpen(false);
+          fileInputRef.current?.click();
+        }}
+      />
     </div>
   );
 }

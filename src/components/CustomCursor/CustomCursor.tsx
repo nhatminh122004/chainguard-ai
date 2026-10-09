@@ -53,6 +53,52 @@ export default function CustomCursor() {
   const shockwaveIdCounter = useRef(0);
   const lastSparkTime = useRef(0);
 
+  const spawnSparks = (x: number, y: number, count = 2, isExplosion = false) => {
+    const colors = ['#00f2fe', '#4facfe', '#00e676', '#7f00ff', '#ff007f', '#ffffff'];
+    const types: Array<'orb' | 'star' | 'ring'> = ['orb', 'star', 'ring'];
+
+    const newSparks: Spark[] = [];
+
+    for (let i = 0; i < count; i++) {
+      sparkIdCounter.current += 1;
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      const type = types[Math.floor(Math.random() * types.length)];
+      const angle = Math.random() * Math.PI * 2;
+      const speed = isExplosion ? Math.random() * 6 + 2 : Math.random() * 2 + 0.5;
+
+      newSparks.push({
+        id: sparkIdCounter.current,
+        x: x + (Math.random() - 0.5) * 12,
+        y: y + (Math.random() - 0.5) * 12,
+        size: isExplosion ? Math.random() * 8 + 4 : Math.random() * 5 + 2,
+        color,
+        type,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        opacity: 1,
+        rotation: Math.random() * 360,
+        vRot: (Math.random() - 0.5) * 10,
+      });
+    }
+
+    setSparks((prev) => [...prev.slice(-40), ...newSparks]);
+  };
+
+  const triggerTripleShockwave = (x: number, y: number) => {
+    const colors = ['#00f2fe', '#00e676', '#ff007f'];
+    colors.forEach((color, idx) => {
+      setTimeout(() => {
+        shockwaveIdCounter.current += 1;
+        const id = shockwaveIdCounter.current;
+        setShockwaves((prev) => [...prev, { id, x, y, color, scale: 1 }]);
+
+        setTimeout(() => {
+          setShockwaves((prev) => prev.filter((sw) => sw.id !== id));
+        }, 700);
+      }, idx * 90);
+    });
+  };
+
   useEffect(() => {
     // Disable on touch devices
     if (window.matchMedia('(pointer: coarse)').matches) {
@@ -221,52 +267,6 @@ export default function CustomCursor() {
       if (animFrameId.current) cancelAnimationFrame(animFrameId.current);
     };
   }, []);
-
-  const spawnSparks = (x: number, y: number, count = 2, isExplosion = false) => {
-    const colors = ['#00f2fe', '#4facfe', '#00e676', '#7f00ff', '#ff007f', '#ffffff'];
-    const types: Array<'orb' | 'star' | 'ring'> = ['orb', 'star', 'ring'];
-
-    const newSparks: Spark[] = [];
-
-    for (let i = 0; i < count; i++) {
-      sparkIdCounter.current += 1;
-      const color = colors[Math.floor(Math.random() * colors.length)];
-      const type = types[Math.floor(Math.random() * types.length)];
-      const angle = Math.random() * Math.PI * 2;
-      const speed = isExplosion ? Math.random() * 6 + 2 : Math.random() * 2 + 0.5;
-
-      newSparks.push({
-        id: sparkIdCounter.current,
-        x: x + (Math.random() - 0.5) * 12,
-        y: y + (Math.random() - 0.5) * 12,
-        size: isExplosion ? Math.random() * 8 + 4 : Math.random() * 5 + 2,
-        color,
-        type,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        opacity: 1,
-        rotation: Math.random() * 360,
-        vRot: (Math.random() - 0.5) * 10,
-      });
-    }
-
-    setSparks((prev) => [...prev.slice(-40), ...newSparks]);
-  };
-
-  const triggerTripleShockwave = (x: number, y: number) => {
-    const colors = ['#00f2fe', '#00e676', '#ff007f'];
-    colors.forEach((color, idx) => {
-      setTimeout(() => {
-        shockwaveIdCounter.current += 1;
-        const id = shockwaveIdCounter.current;
-        setShockwaves((prev) => [...prev, { id, x, y, color, scale: 1 }]);
-
-        setTimeout(() => {
-          setShockwaves((prev) => prev.filter((sw) => sw.id !== id));
-        }, 700);
-      }, idx * 90);
-    });
-  };
 
   if (!enabled) return null;
 
